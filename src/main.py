@@ -10,9 +10,10 @@ from pathlib import Path
 from capture import CaptureError, ScreenCapture
 from config import AppConfig, ConfigError, ensure_config, load_config
 from detector import DetectorError, TemplateDetector
+from watcher import DetectionState, EventKind
 
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -88,16 +89,38 @@ def test_once(config: AppConfig) -> int:
     return 0 if result.matched else 1
 
 
-def run_stage_two(config: AppConfig) -> int:
+def _timestamp() -> str:
+    return time.strftime("%H:%M:%S")
+
+
+def run_watcher(config: AppConfig) -> int:
+    detector = TemplateDetector(config.reference, config.confidence)
+    state = DetectionState(config.consecutive_matches, config.cooldown_seconds)
     print_summary(config)
     print()
-    print("2단계 이미지 탐지 기능이 준비되었습니다.")
-    print("한 번 검사하려면 --test 옵션을 사용하세요.")
-    print("실시간 반복 감시는 3단계에서 연결됩니다.")
+    print("실시간 감시를 시작했습니다.")
     print("종료하려면 Ctrl+C를 누르세요.")
     try:
-        while True:
-            time.sleep(1)
+        with ScreenCapture() as capture:
+            while True:
+                cycle_started = time.perf_counter()
+                frame, origin = capture.grab(config.monitor, config.region)
+                result = detector.detect(frame, origin)
+                event = state.update(result.matched, time.monotonic())
+
+                if event is not None and event.kind is EventKind.FOUND:
+                    print(
+                        f"[{_timestamp()}] 이미지 발견 | 일치율 {result.confidence:.2%} "
+                        f"| 위치 {result.left},{result.top} "
+                        f"({result.width}x{result.height})"
+                    )
+                elif event is not None and event.kind is EventKind.DISAPPEARED:
+                    print(f"[{_timestamp()}] 이미지 사라짐")
+
+                elapsed = time.perf_counter() - cycle_started
+                remaining = config.interval_ms / 1000.0 - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
     except KeyboardInterrupt:
         print("\n종료 요청을 받아 안전하게 종료했습니다.")
         return 0
@@ -123,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.test:
             return test_once(config)
-        return run_stage_two(config)
+        return run_watcher(config)
     except ConfigError as exc:
         print(f"[설정 오류] {exc}", file=sys.stderr)
         return 2
