@@ -1,0 +1,178 @@
+ImageWatcher 0.5.0 사용설명서
+================================
+
+1. 프로그램 소개
+----------------
+ImageWatcher는 Windows 화면에서 reference.png와 같은 이미지를 실시간으로 찾습니다.
+이미지가 발견되면 CMD에 결과를 표시하고 설정에 따라 소리, Windows 알림,
+스크린샷과 이벤트 로그를 남깁니다.
+
+
+2. 빠른 시작
+------------
+1) 찾으려는 화면 부분을 캡처합니다.
+2) 이미지 이름을 reference.png로 변경합니다.
+3) reference.png를 ImageWatcher.exe와 같은 폴더에 둡니다.
+4) start.cmd를 더블클릭합니다.
+5) 종료할 때 CMD 창에서 Ctrl+C를 누릅니다.
+
+기준 이미지는 글자, 아이콘, 테두리처럼 형태와 명암 차이가 있어야 합니다.
+완전한 단색 이미지는 사용할 수 없습니다.
+
+
+3. 배포 폴더의 필수 파일
+-----------------------
+ImageWatcher.exe       실행 프로그램
+start.cmd              더블클릭 실행 파일
+settings.ini           감시 설정
+reference.png          사용자가 준비하는 기준 이미지(Git 제외)
+사용설명서.txt          이 문서
+
+logs 폴더와 captures 폴더는 실행할 때 자동으로 준비됩니다.
+
+
+4. 기본 실행 방법
+----------------
+start.cmd를 더블클릭하면 실시간 감시가 시작됩니다.
+
+정상 출력 예시:
+
+  실시간 감시를 시작했습니다.
+  종료하려면 Ctrl+C를 누르세요.
+
+  [14:21:08] 이미지 발견 | 일치율 92.10% | 위치 100,200 (80x40)
+  [14:21:08] 캡처 저장 | ...\captures\detected_....png
+  [14:21:11] 이미지 사라짐
+
+
+5. 설정 파일
+------------
+settings.ini를 메모장으로 열어 수정합니다.
+
+[watch]
+reference = reference.png
+monitor = 1
+region = full
+confidence = 0.85
+interval_ms = 100
+consecutive_matches = 2
+cooldown_seconds = 3
+
+[notification]
+sound = true
+desktop_notification = true
+save_capture = true
+
+[storage]
+log_directory = logs
+capture_directory = captures
+retention_days = 7
+
+주요 설정 설명:
+
+reference
+  기준 이미지 파일 경로입니다.
+
+monitor
+  감시할 모니터 번호입니다. 기본값은 1입니다.
+
+region
+  full이면 선택한 모니터 전체를 검사합니다.
+  일부 영역은 left,top,width,height 형식으로 입력합니다.
+  예: region = 100,200,800,600
+  좌표는 선택한 모니터의 왼쪽 위를 0,0으로 사용합니다.
+
+confidence
+  최소 일치율입니다. 0.85는 85% 이상 일치할 때 발견한다는 뜻입니다.
+  값을 높이면 판정이 엄격해지고 낮추면 더 쉽게 발견하지만 오탐이 늘 수 있습니다.
+
+interval_ms
+  검사 간격입니다. 100은 약 0.1초마다 한 번 검사한다는 뜻입니다.
+
+consecutive_matches
+  발견 또는 사라짐을 확정하는 데 필요한 연속 프레임 수입니다.
+
+cooldown_seconds
+  같은 대상이 빠르게 다시 나타날 때 알림을 반복하지 않는 시간입니다.
+
+sound / desktop_notification / save_capture
+  true면 기능을 사용하고 false면 사용하지 않습니다.
+
+retention_days
+  지정 일수보다 오래된 detected_*.png를 실행 시 정리합니다.
+  0이면 자동 정리를 하지 않습니다.
+
+
+6. 검사와 진단 명령
+------------------
+프로젝트 폴더에서 CMD를 열고 다음 명령을 사용할 수 있습니다.
+
+  ImageWatcher.exe --help
+  ImageWatcher.exe --version
+  ImageWatcher.exe --list-monitors
+  ImageWatcher.exe --check-config
+  ImageWatcher.exe --test
+
+--list-monitors
+  사용할 수 있는 모니터 번호와 해상도를 표시합니다.
+
+--check-config
+  설정과 기준 이미지 파일을 확인하고 종료합니다.
+
+--test
+  화면을 한 번 검사하고 최고 일치율과 위치를 표시합니다.
+  발견 시 종료 코드 0, 미발견 시 1을 반환합니다.
+
+
+7. 기록 위치
+------------
+logs\events.jsonl
+  발견·사라짐 시각, 일치율, 위치와 캡처 경로를 한 줄씩 기록합니다.
+
+captures\detected_*.png
+  이미지가 발견된 순간의 감시 화면입니다.
+
+스크린샷에는 개인정보가 포함될 수 있습니다.
+저장이 필요하지 않으면 settings.ini에서 save_capture = false로 변경하십시오.
+
+
+8. 자주 발생하는 문제
+---------------------
+[설정 오류] 기준 이미지를 찾을 수 없습니다.
+  reference.png가 실행 폴더에 있는지 확인합니다.
+
+기준 이미지에 구분 가능한 무늬나 명암 차이가 없습니다.
+  더 넓고 특징적인 범위를 다시 캡처합니다.
+
+기준 이미지가 감시 영역보다 큽니다.
+  더 작은 기준 이미지를 사용하거나 region을 넓힙니다.
+
+화면에 이미지가 있지만 미발견됩니다.
+  --test로 최고 일치율을 확인합니다.
+  confidence를 0.85에서 0.80 또는 0.75로 조금씩 낮춥니다.
+  Windows 화면 배율과 기준 이미지 캡처 배율이 같은지 확인합니다.
+
+Windows graphics function failed: BitBlt
+  화면이 잠기지 않은 일반 Windows 사용자 세션에서 실행합니다.
+  연결이 끊어진 원격 데스크톱이나 Windows 서비스에서는 실패할 수 있습니다.
+
+Windows 알림이 표시되지 않습니다.
+  Windows 알림 설정에서 방해 금지와 ImageWatcher 알림 허용 여부를 확인합니다.
+  화면 감시와 로그 저장은 알림 실패와 별도로 계속 동작합니다.
+
+
+9. 개발자용 빌드
+----------------
+1) py -3 -m venv .venv
+2) .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+3) build.cmd 실행
+
+빌드 성공 시 프로젝트 최상위 폴더에 ImageWatcher.exe가 생성됩니다.
+ImageWatcher.exe는 Git에 포함되지 않습니다.
+
+
+10. 지원 환경
+-------------
+운영체제: Windows 10 또는 Windows 11
+실행 위치: 로그인된 일반 데스크톱 사용자 세션
+지원 이미지: OpenCV가 읽을 수 있는 PNG/JPG 계열 이미지

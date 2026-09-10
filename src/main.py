@@ -16,7 +16,24 @@ from notifier import Notifier
 from watcher import DetectionState, EventKind
 
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
+
+
+def configure_console() -> None:
+    """Windows 콘솔과 Python 출력 인코딩을 UTF-8로 일치시킨다."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        ctypes.windll.kernel32.SetConsoleCP(65001)
+    except (AttributeError, OSError):
+        pass
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -157,6 +174,7 @@ def run_watcher(config: AppConfig) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_console()
     args = build_parser().parse_args(argv)
     config_path = Path(args.config)
 
