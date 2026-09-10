@@ -5,15 +5,18 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from capture import CaptureError, ScreenCapture
 from config import AppConfig, ConfigError, ensure_config, load_config
 from detector import DetectorError, TemplateDetector
+from event_logger import EventLogger
+from notifier import Notifier
 from watcher import DetectionState, EventKind
 
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,9 +96,22 @@ def _timestamp() -> str:
     return time.strftime("%H:%M:%S")
 
 
+def _print_warnings(warnings: tuple[str, ...]) -> None:
+    for warning in warnings:
+        print(f"[경고] {warning}", file=sys.stderr)
+
+
 def run_watcher(config: AppConfig) -> int:
     detector = TemplateDetector(config.reference, config.confidence)
     state = DetectionState(config.consecutive_matches, config.cooldown_seconds)
+    event_logger = EventLogger(
+        config.log_directory,
+        config.capture_directory,
+        config.save_capture,
+        config.retention_days,
+    )
+    notifier = Notifier(config.sound, config.desktop_notification)
+    _print_warnings(event_logger.cleanup_old_captures())
     print_summary(config)
     print()
     print("실시간 감시를 시작했습니다.")
@@ -109,13 +125,27 @@ def run_watcher(config: AppConfig) -> int:
                 event = state.update(result.matched, time.monotonic())
 
                 if event is not None and event.kind is EventKind.FOUND:
+                    occurred_at = datetime.now().astimezone()
+                    recorded = event_logger.record_found(
+                        result,
+                        frame,
+                        occurred_at,
+                        event.notification_allowed,
+                    )
                     print(
                         f"[{_timestamp()}] 이미지 발견 | 일치율 {result.confidence:.2%} "
                         f"| 위치 {result.left},{result.top} "
                         f"({result.width}x{result.height})"
                     )
+                    if recorded.capture_path:
+                        print(f"[{_timestamp()}] 캡처 저장 | {recorded.capture_path}")
+                    _print_warnings(recorded.warnings)
+                    if event.notification_allowed:
+                        _print_warnings(notifier.notify_found(result.confidence))
                 elif event is not None and event.kind is EventKind.DISAPPEARED:
+                    recorded = event_logger.record_disappeared(datetime.now().astimezone())
                     print(f"[{_timestamp()}] 이미지 사라짐")
+                    _print_warnings(recorded.warnings)
 
                 elapsed = time.perf_counter() - cycle_started
                 remaining = config.interval_ms / 1000.0 - elapsed
