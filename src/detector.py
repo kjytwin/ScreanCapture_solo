@@ -80,3 +80,25 @@ class TemplateDetector:
             width=self.width,
             height=self.height,
         )
+
+
+def save_detection_preview(frame, result: DetectionResult, origin: tuple[int, int], output: Path) -> None:
+    """최고 점수 위치를 표시한다. 미발견은 빨간색, 발견은 초록색이다."""
+    import cv2
+
+    if output.suffix.lower() != ".png":
+        raise DetectorError("검사 이미지 저장 경로는 .png여야 합니다.")
+    annotated = frame.copy()
+    x, y = result.left - origin[0], result.top - origin[1]
+    color = (0, 200, 0) if result.matched else (0, 0, 255)
+    cv2.rectangle(annotated, (x, y), (x + result.width - 1, y + result.height - 1), color, 2)
+    cv2.putText(annotated, f"score={result.confidence:.3f}", (x, max(15, y)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+    try:
+        success, encoded = cv2.imencode(".png", annotated)
+        if not success:
+            raise DetectorError("검사 이미지를 PNG로 변환하지 못했습니다.")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(encoded.tobytes())
+    except (OSError, cv2.error) as exc:
+        raise DetectorError(f"검사 이미지를 저장하지 못했습니다: {exc}") from exc

@@ -26,7 +26,7 @@ class Notifier:
                 toast = Notification(
                     app_id="ImageWatcher",
                     title="ImageWatcher",
-                    msg=f"기준 이미지를 발견했습니다. 일치율 {confidence:.2%}",
+                    msg=f"기준 이미지를 발견했습니다. 유사도 점수 {confidence:.2%}",
                     duration="short",
                 )
                 toast.show()

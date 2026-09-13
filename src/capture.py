@@ -93,9 +93,11 @@ class ScreenCapture:
 
     def grab(self, monitor_number: int, region: Region | None = None):
         """BGR 순서의 NumPy 배열과 화면 절대 좌표를 반환한다."""
-        area = self._capture_area(monitor_number, region)
         try:
+            area = self._capture_area(monitor_number, region)
             bgra = self._numpy.asarray(self._session.grab(area))
+        except CaptureError:
+            raise
         except Exception as exc:
             raise CaptureError(f"화면 캡처에 실패했습니다: {exc}") from exc
         return bgra[:, :, :3].copy(), (area["left"], area["top"])
