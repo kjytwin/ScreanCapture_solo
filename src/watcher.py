@@ -20,12 +20,16 @@ class WatchEvent:
 class DetectionState:
     """프레임 단위 결과를 안정적인 발견/사라짐 이벤트로 변환한다."""
 
-    def __init__(self, consecutive_matches: int, cooldown_seconds: float) -> None:
+    def __init__(self, consecutive_matches: int, cooldown_seconds: float,
+                 consecutive_misses: int | None = None) -> None:
         if consecutive_matches < 1:
             raise ValueError("consecutive_matches는 1 이상이어야 합니다.")
         if cooldown_seconds < 0:
             raise ValueError("cooldown_seconds는 0 이상이어야 합니다.")
         self._required = consecutive_matches
+        self._required_misses = consecutive_matches if consecutive_misses is None else consecutive_misses
+        if self._required_misses < 1:
+            raise ValueError("consecutive_misses는 1 이상이어야 합니다.")
         self._cooldown = cooldown_seconds
         self._matches = 0
         self._misses = 0
@@ -61,10 +65,15 @@ class DetectionState:
             self._misses = 0
             return None
         self._misses += 1
-        if self._misses < self._required:
+        if self._misses < self._required_misses:
             return None
 
         self._misses = 0
         self._present = False
         return WatchEvent(EventKind.DISAPPEARED)
+
+    def reset_pending(self) -> None:
+        """관측 실패는 연속 프레임을 끊되 마지막 확정 상태는 유지한다."""
+        self._matches = 0
+        self._misses = 0
 

@@ -12,8 +12,10 @@ reference = reference.png
 monitor = 1
 region = full
 confidence = 0.85
+disappearance_confidence = 0.80
 interval_ms = 100
 consecutive_matches = 2
+consecutive_misses = 3
 cooldown_seconds = 3
 
 [notification]
@@ -25,6 +27,9 @@ save_capture = true
 log_directory = logs
 capture_directory = captures
 retention_days = 7
+max_capture_mb = 512
+max_log_mb = 5
+log_backups = 3
 """
 
 
@@ -59,6 +64,11 @@ class AppConfig:
     log_directory: Path
     capture_directory: Path
     retention_days: int
+    disappearance_confidence: float | None = None
+    consecutive_misses: int | None = None
+    max_capture_mb: int = 512
+    max_log_mb: int = 5
+    log_backups: int = 3
 
 
 def ensure_config(path: Path) -> bool:
@@ -105,8 +115,10 @@ def load_config(path: Path, *, require_reference: bool = True) -> AppConfig:
         monitor = parser.getint("watch", "monitor")
         region = _parse_region(parser.get("watch", "region"))
         confidence = parser.getfloat("watch", "confidence")
+        disappearance_confidence = parser.getfloat("watch", "disappearance_confidence", fallback=confidence)
         interval_ms = parser.getint("watch", "interval_ms")
         consecutive_matches = parser.getint("watch", "consecutive_matches")
+        consecutive_misses = parser.getint("watch", "consecutive_misses", fallback=consecutive_matches)
         cooldown_seconds = parser.getfloat("watch", "cooldown_seconds")
         sound = parser.getboolean("notification", "sound")
         desktop_notification = parser.getboolean("notification", "desktop_notification")
@@ -114,6 +126,9 @@ def load_config(path: Path, *, require_reference: bool = True) -> AppConfig:
         log_directory = (base / parser.get("storage", "log_directory")).resolve()
         capture_directory = (base / parser.get("storage", "capture_directory")).resolve()
         retention_days = parser.getint("storage", "retention_days")
+        max_capture_mb = parser.getint("storage", "max_capture_mb", fallback=512)
+        max_log_mb = parser.getint("storage", "max_log_mb", fallback=5)
+        log_backups = parser.getint("storage", "log_backups", fallback=3)
     except (configparser.Error, KeyError, ValueError) as exc:
         if isinstance(exc, ConfigError):
             raise
@@ -122,10 +137,15 @@ def load_config(path: Path, *, require_reference: bool = True) -> AppConfig:
     if monitor < 1:
         raise ConfigError("watch.monitor 값은 1 이상이어야 합니다.")
     _require_range("watch.confidence", confidence, 0.0, 1.0)
+    _require_range("watch.disappearance_confidence", disappearance_confidence, 0.0, confidence)
+    _require_range("watch.consecutive_misses", consecutive_misses, 1, 100)
     _require_range("watch.interval_ms", interval_ms, 10, 60_000)
     _require_range("watch.consecutive_matches", consecutive_matches, 1, 100)
     _require_range("watch.cooldown_seconds", cooldown_seconds, 0, 86_400)
     _require_range("storage.retention_days", retention_days, 0, 3_650)
+    _require_range("storage.max_capture_mb", max_capture_mb, 0, 1_000_000)
+    _require_range("storage.max_log_mb", max_log_mb, 1, 1024)
+    _require_range("storage.log_backups", log_backups, 1, 100)
     if require_reference and not reference.is_file():
         raise ConfigError(
             f"기준 이미지를 찾을 수 없습니다: {reference}\n"
@@ -147,5 +167,10 @@ def load_config(path: Path, *, require_reference: bool = True) -> AppConfig:
         log_directory=log_directory,
         capture_directory=capture_directory,
         retention_days=retention_days,
+        disappearance_confidence=disappearance_confidence,
+        consecutive_misses=consecutive_misses,
+        max_capture_mb=max_capture_mb,
+        max_log_mb=max_log_mb,
+        log_backups=log_backups,
     )
 

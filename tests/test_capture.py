@@ -45,6 +45,16 @@ class CaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(CaptureError, "사용 가능한 모니터 수: 2"):
             self.create_capture()._capture_area(3, None)
 
+    def test_monitor_enumeration_failure_is_wrapped_for_retry(self) -> None:
+        class OfflineSession:
+            @property
+            def monitors(self):
+                raise RuntimeError("display disconnected")
+        capture = self.create_capture()
+        capture._session = OfflineSession()
+        with self.assertRaisesRegex(CaptureError, "display disconnected"):
+            capture.grab(1)
+
 
 if __name__ == "__main__":
     unittest.main()

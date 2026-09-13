@@ -1,4 +1,4 @@
-ImageWatcher 0.5.0 사용설명서
+ImageWatcher 0.6.0 사용설명서
 ================================
 
 1. 프로그램 소개
@@ -40,7 +40,7 @@ start.cmd를 더블클릭하면 실시간 감시가 시작됩니다.
   실시간 감시를 시작했습니다.
   종료하려면 Ctrl+C를 누르세요.
 
-  [14:21:08] 이미지 발견 | 일치율 92.10% | 위치 100,200 (80x40)
+  [14:21:08] 이미지 발견 | 유사도 점수 92.10% | 위치 100,200 (80x40)
   [14:21:08] 캡처 저장 | ...\captures\detected_....png
   [14:21:11] 이미지 사라짐
 
@@ -54,8 +54,10 @@ reference = reference.png
 monitor = 1
 region = full
 confidence = 0.85
+disappearance_confidence = 0.80
 interval_ms = 100
 consecutive_matches = 2
+consecutive_misses = 3
 cooldown_seconds = 3
 
 [notification]
@@ -67,6 +69,9 @@ save_capture = true
 log_directory = logs
 capture_directory = captures
 retention_days = 7
+max_capture_mb = 512
+max_log_mb = 5
+log_backups = 3
 
 주요 설정 설명:
 
@@ -83,14 +88,21 @@ region
   좌표는 선택한 모니터의 왼쪽 위를 0,0으로 사용합니다.
 
 confidence
-  최소 일치율입니다. 0.85는 85% 이상 일치할 때 발견한다는 뜻입니다.
+  최소 유사도 점수입니다. 0.85는 85% 이상 일치할 때 발견한다는 뜻입니다.
   값을 높이면 판정이 엄격해지고 낮추면 더 쉽게 발견하지만 오탐이 늘 수 있습니다.
 
 interval_ms
   검사 간격입니다. 100은 약 0.1초마다 한 번 검사한다는 뜻입니다.
 
 consecutive_matches
-  발견 또는 사라짐을 확정하는 데 필요한 연속 프레임 수입니다.
+  발견을 확정하는 데 필요한 연속 프레임 수입니다.
+
+consecutive_misses
+  사라짐을 확정하는 연속 프레임 수입니다. 기본 3회입니다.
+
+disappearance_confidence
+  발견 이후 이 점수 미만일 때 사라짐 후보로 판정합니다. 기본 0.80입니다.
+  confidence 이하로 설정해야 합니다.
 
 cooldown_seconds
   같은 대상이 빠르게 다시 나타날 때 알림을 반복하지 않는 시간입니다.
@@ -99,8 +111,16 @@ sound / desktop_notification / save_capture
   true면 기능을 사용하고 false면 사용하지 않습니다.
 
 retention_days
-  지정 일수보다 오래된 detected_*.png를 실행 시 정리합니다.
-  0이면 자동 정리를 하지 않습니다.
+  프로그램 생성 형식 detected_YYYYMMDD_HHMMSS_ffffff.png의 캡처를
+  시작 시, 매시간, 발견 이벤트 저장 후 정리합니다. 0이면 기간 제한을 끕니다.
+
+max_capture_mb
+  생성 캡처의 총용량 제한(MiB)입니다. 기본 512이며 오래된 파일부터 삭제합니다.
+  0이면 용량 제한을 끕니다. 기간 제한과 독립적으로 적용됩니다.
+
+max_log_mb / log_backups
+  로그 파일당 용량(MiB)과 백업 개수입니다. 기본 5MiB, 백업 3개입니다.
+  events.jsonl.1이 가장 최근 백업입니다. 로그는 기간 대신 용량으로 순환합니다.
 
 
 6. 검사와 진단 명령
@@ -117,17 +137,18 @@ retention_days
   사용할 수 있는 모니터 번호와 해상도를 표시합니다.
 
 --check-config
-  설정과 기준 이미지 파일을 확인하고 종료합니다.
+  이미지 디코딩, 단색 여부, 모니터·감시 영역·이미지 크기,
+  로그·캡처 폴더 쓰기 권한과 한 번의 화면 캡처·비교를 확인합니다.
 
 --test
-  화면을 한 번 검사하고 최고 일치율과 위치를 표시합니다.
+  화면을 한 번 검사하고 최고 유사도 점수과 위치를 표시합니다.
   발견 시 종료 코드 0, 미발견 시 1을 반환합니다.
 
 
 7. 기록 위치
 ------------
 logs\events.jsonl
-  발견·사라짐 시각, 일치율, 위치와 캡처 경로를 한 줄씩 기록합니다.
+  발견·사라짐 시각, 유사도 점수, 위치와 캡처 경로를 한 줄씩 기록합니다.
 
 captures\detected_*.png
   이미지가 발견된 순간의 감시 화면입니다.
@@ -148,7 +169,7 @@ captures\detected_*.png
   더 작은 기준 이미지를 사용하거나 region을 넓힙니다.
 
 화면에 이미지가 있지만 미발견됩니다.
-  --test로 최고 일치율을 확인합니다.
+  --test로 최고 유사도 점수을 확인합니다.
   confidence를 0.85에서 0.80 또는 0.75로 조금씩 낮춥니다.
   Windows 화면 배율과 기준 이미지 캡처 배율이 같은지 확인합니다.
 
@@ -176,3 +197,27 @@ ImageWatcher.exe는 Git에 포함되지 않습니다.
 운영체제: Windows 10 또는 Windows 11
 실행 위치: 로그인된 일반 데스크톱 사용자 세션
 지원 이미지: OpenCV가 읽을 수 있는 PNG/JPG 계열 이미지
+
+
+11. 0.6.0 추가 기능과 동작
+-------------------------
+감지 점수는 OpenCV 템플릿 유사도이며 정답 확률이 아닙니다.
+
+검사 결과 이미지 저장:
+  ImageWatcher.exe --test --test-output check.png
+  최고 점수 위치를 발견 시 초록색, 미발견 시 빨간색으로 표시합니다.
+  감시 영역 전체를 저장하므로 필요한 경우에만 사용하세요. 기존 경로는 덮어씁니다.
+
+저장·알림은 별도 스레드에서 순서대로 처리합니다. 대기 큐는 4개입니다.
+큐가 가득 차면 해당 이벤트의 저장·알림을 생략하고 경고합니다.
+종료 시 최대 5초간 대기하며 초과하면 미완료 작업 경고를 표시합니다.
+캡처 오류는 1초, 2초 후 재시도하며 연속 3회 실패 시 종료 코드 3으로 종료합니다.
+오류는 로그에 capture_error 이벤트로 기록합니다(큐 포화·저장 실패 시 기록 불가).
+관측 실패는 발견·사라짐의 연속 횟수를 초기화하며 확정 상태는 유지합니다.
+매 60초마다 실제 검사 횟수/초와 평균 처리 시간을 출력합니다.
+기존 설정에 새로운 판정 항목이 없으면 기존 confidence와 consecutive_matches를 사용합니다.
+
+개발 검증:
+  .venv\Scripts\python.exe -m unittest discover -s tests -v
+GitHub Actions는 Windows Python 3.12/3.13에서 테스트하고 3.12에서 EXE를 빌드합니다.
+실제 화면 배율·테마별 정확도 및 Windows 알림 표시는 대상 PC에서 확인해야 합니다.

@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+import cv2
+import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -22,8 +24,10 @@ class MainTests(unittest.TestCase):
             root = Path(directory)
             config_path = root / "settings.ini"
             config_path.write_text(DEFAULT_CONFIG, encoding="utf-8")
-            (root / "reference.png").write_bytes(b"placeholder")
-            with contextlib.redirect_stdout(io.StringIO()):
+            reference = np.array([[0, 100], [200, 255]], dtype=np.uint8)
+            (root / "reference.png").write_bytes(cv2.imencode(".png", reference)[1].tobytes())
+            with patch("main.ScreenCapture") as capture, contextlib.redirect_stdout(io.StringIO()):
+                capture.return_value.__enter__.return_value.grab.return_value = (reference, (0, 0))
                 result = main.main(["--config", str(config_path), "--check-config"])
             self.assertEqual(result, 0)
 
@@ -112,8 +116,8 @@ class MainTests(unittest.TestCase):
             config = load_config(config_path)
             main.prepare_directories(config)
 
-            frames = iter([object(), object(), object(), object()])
-            matches = iter([True, True, False, False])
+            frames = iter([object() for _ in range(5)])
+            matches = iter([True, True, False, False, False])
 
             class FakeCapture:
                 def __enter__(self):
@@ -129,9 +133,10 @@ class MainTests(unittest.TestCase):
                         raise KeyboardInterrupt from exc
 
             def detect(frame, origin):
+                matched = next(matches)
                 return SimpleNamespace(
-                    matched=next(matches),
-                    confidence=0.99,
+                    matched=matched,
+                    confidence=0.99 if matched else 0.1,
                     left=10,
                     top=20,
                     width=30,
