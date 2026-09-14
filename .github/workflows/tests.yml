@@ -26,3 +26,17 @@ jobs:
         run: python -m PyInstaller --noconfirm --clean --onefile --name ImageWatcher --hidden-import winotify src/main.py
       - if: matrix.python == '3.12'
         run: ./dist/ImageWatcher.exe --version
+      - if: matrix.python == '3.12'
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name ImageWatcherGUI --hidden-import winotify src/gui.py
+      - if: matrix.python == '3.12'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ./dist/ImageWatcherGUI.exe -ArgumentList --smoke-test -Wait -PassThru
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+      - if: matrix.python == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImageWatcher-Windows
+          path: |
+            dist/ImageWatcher.exe
+            dist/ImageWatcherGUI.exe

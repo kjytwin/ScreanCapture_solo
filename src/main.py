@@ -5,20 +5,14 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-import tempfile
-from datetime import datetime
 from pathlib import Path
 
 from capture import CaptureError, ScreenCapture
 from config import AppConfig, ConfigError, ensure_config, load_config
 from detector import DetectorError, TemplateDetector
-from event_logger import EventLogger
-from notifier import Notifier
-from watcher import DetectionState, EventKind
-from worker import ActionWorker
-
-
-VERSION = "0.6.0"
+from diagnostics import prepare_directories, validate_environment
+from version import VERSION
+from watch_engine import EngineEvent, EngineEventKind, WatchEngine
 
 
 def configure_console() -> None:
@@ -68,22 +62,6 @@ def print_summary(config: AppConfig) -> None:
     print(f"검사 간격   : {config.interval_ms}ms")
 
 
-def prepare_directories(config: AppConfig) -> None:
-    for label, directory in (
-        ("로그", config.log_directory),
-        ("캡처", config.capture_directory),
-    ):
-        if directory.exists() and not directory.is_dir():
-            raise ConfigError(f"{label} 경로가 폴더가 아닙니다: {directory}")
-        try:
-            directory.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryFile(dir=directory) as probe:
-                probe.write(b"ImageWatcher storage check")
-                probe.flush()
-        except OSError as exc:
-            raise ConfigError(f"{label} 폴더를 준비하거나 쓸 수 없습니다: {directory} ({exc})") from exc
-
-
 def list_monitors() -> int:
     with ScreenCapture() as capture:
         monitors = capture.monitors()
@@ -96,13 +74,6 @@ def list_monitors() -> int:
             f"(화면 좌표 {monitor.left},{monitor.top})"
         )
     return 0
-
-
-def validate_environment(config: AppConfig) -> None:
-    detector = TemplateDetector(config.reference, config.confidence)
-    with ScreenCapture() as capture:
-        frame, origin = capture.grab(config.monitor, config.region)
-    detector.detect(frame, origin)
 
 
 def test_once(config: AppConfig, output: Path | None = None) -> int:
@@ -137,104 +108,45 @@ def _print_warnings(warnings: tuple[str, ...]) -> None:
 
 
 def run_watcher(config: AppConfig) -> int:
-    detector = TemplateDetector(config.reference, config.confidence)
-    state = DetectionState(config.consecutive_matches, config.cooldown_seconds,
-                           config.consecutive_misses)
-    event_logger = EventLogger(config.log_directory, config.capture_directory,
-                               config.save_capture, config.retention_days,
-                               config.max_capture_mb, config.max_log_mb, config.log_backups)
-    notifier = Notifier(config.sound, config.desktop_notification)
-    worker = ActionWorker(_print_warnings)
-
-    def cleanup():
-        _print_warnings(event_logger.cleanup_old_captures())
-
-    def found(result, frame, occurred_at, allowed):
-        recorded = event_logger.record_found(result, frame, occurred_at, allowed)
-        _print_warnings(recorded.warnings)
-        if recorded.capture_path:
-            print(f"[{_timestamp()}] 캡처 저장 | {recorded.capture_path}")
-        if allowed:
-            _print_warnings(notifier.notify_found(result.confidence))
-        cleanup()
-
-    def disappeared(occurred_at):
-        _print_warnings(event_logger.record_disappeared(occurred_at).warnings)
-
-    def capture_error(message):
-        _print_warnings(event_logger.record_error(message))
-
-    worker.submit(cleanup)
     print_summary(config)
     print("\n실시간 감시를 시작했습니다.\n종료하려면 Ctrl+C를 누르세요.")
-    capture = None
-    failures = 0
-    next_cleanup = time.monotonic() + 3600
-    stats_started = time.perf_counter()
-    cycles = 0
-    busy_seconds = 0.0
+
+    def report(event: EngineEvent) -> None:
+        result = event.result
+        if event.kind is EngineEventKind.FOUND and result is not None:
+            print(
+                f"[{_timestamp()}] 이미지 발견 | 유사도 점수 {result.confidence:.2%} "
+                f"| 위치 {result.left},{result.top} ({result.width}x{result.height})"
+            )
+        elif event.kind is EngineEventKind.DISAPPEARED:
+            print(f"[{_timestamp()}] 이미지 사라짐")
+        elif event.kind is EngineEventKind.CAPTURE_SAVED:
+            print(f"[{_timestamp()}] 캡처 저장 | {event.capture_path}")
+        elif event.kind is EngineEventKind.WARNING:
+            _print_warnings((event.message,))
+        elif event.kind is EngineEventKind.PERFORMANCE:
+            print(
+                f"[{_timestamp()}] 검사 성능 | {event.scans_per_second:.1f}회/초 "
+                f"| 평균 처리 {event.average_processing_ms:.1f}ms"
+            )
+
+    engine = WatchEngine(
+        config,
+        report,
+        capture_factory=ScreenCapture,
+        detector_factory=TemplateDetector,
+        monotonic=time.monotonic,
+        perf_counter=time.perf_counter,
+        waiter=lambda seconds: (time.sleep(seconds), False)[1],
+    )
     try:
-        while True:
-            cycle_started = time.perf_counter()
-            try:
-                if capture is None:
-                    capture = ScreenCapture()
-                    capture.__enter__()
-                frame, origin = capture.grab(config.monitor, config.region)
-            except CaptureError as exc:
-                failures += 1
-                state.reset_pending()
-                message = f"화면 캡처 실패 {failures}/3: {exc}"
-                _print_warnings((message,))
-                worker.submit(capture_error, message)
-                if capture is not None:
-                    capture.__exit__(None, None, None)
-                    capture = None
-                if failures >= 3:
-                    raise CaptureError("화면 캡처가 연속 3회 실패했습니다. 화면 세션과 모니터 설정을 확인하세요.") from exc
-                time.sleep(float(failures))
-                continue
-            failures = 0
-            result = detector.detect(frame, origin)
-            threshold = config.disappearance_confidence if state.present else config.confidence
-            if threshold is None:
-                threshold = config.confidence
-            event = state.update(result.confidence >= threshold, time.monotonic())
-            if event is not None and event.kind is EventKind.FOUND:
-                print(f"[{_timestamp()}] 이미지 발견 | 유사도 점수 {result.confidence:.2%} "
-                      f"| 위치 {result.left},{result.top} ({result.width}x{result.height})")
-                worker.submit(found, result, frame if config.save_capture else None,
-                              datetime.now().astimezone(), event.notification_allowed)
-            elif event is not None and event.kind is EventKind.DISAPPEARED:
-                print(f"[{_timestamp()}] 이미지 사라짐")
-                worker.submit(disappeared, datetime.now().astimezone())
-            now = time.monotonic()
-            if now >= next_cleanup:
-                if worker.submit(cleanup):
-                    next_cleanup = now + 3600
-            elapsed = time.perf_counter() - cycle_started
-            cycles += 1
-            busy_seconds += elapsed
-            stats_elapsed = time.perf_counter() - stats_started
-            if stats_elapsed >= 60:
-                print(f"[{_timestamp()}] 검사 성능 | {cycles / stats_elapsed:.1f}회/초 "
-                      f"| 평균 처리 {busy_seconds / cycles * 1000:.1f}ms")
-                stats_started = time.perf_counter()
-                cycles = 0
-                busy_seconds = 0.0
-            remaining = config.interval_ms / 1000.0 - elapsed
-            if remaining > 0:
-                time.sleep(remaining)
+        engine.run()
     except KeyboardInterrupt:
         print("\n종료 요청을 받았습니다.")
-        return 0
+        engine.stop()
     finally:
-        try:
-            if capture is not None:
-                capture.__exit__(None, None, None)
-        finally:
-            worker.close()
         print("감시를 안전하게 종료했습니다.")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
