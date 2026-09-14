@@ -26,7 +26,7 @@ class MainTests(unittest.TestCase):
             config_path.write_text(DEFAULT_CONFIG, encoding="utf-8")
             reference = np.array([[0, 100], [200, 255]], dtype=np.uint8)
             (root / "reference.png").write_bytes(cv2.imencode(".png", reference)[1].tobytes())
-            with patch("main.ScreenCapture") as capture, contextlib.redirect_stdout(io.StringIO()):
+            with patch("diagnostics.ScreenCapture") as capture, contextlib.redirect_stdout(io.StringIO()):
                 capture.return_value.__enter__.return_value.grab.return_value = (reference, (0, 0))
                 result = main.main(["--config", str(config_path), "--check-config"])
             self.assertEqual(result, 0)

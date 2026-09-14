@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import configparser
+import io
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,6 +101,99 @@ def _require_range(name: str, value: float, minimum: float, maximum: float) -> N
         raise ConfigError(f"{name} 값은 {minimum} 이상 {maximum} 이하여야 합니다.")
 
 
+def validate_config(config: AppConfig, *, require_reference: bool = True) -> None:
+    """메모리에서 구성한 설정도 파일 로드와 같은 규칙으로 검증한다."""
+    if config.monitor < 1:
+        raise ConfigError("watch.monitor 값은 1 이상이어야 합니다.")
+    _require_range("watch.confidence", config.confidence, 0.0, 1.0)
+    disappearance = (
+        config.confidence
+        if config.disappearance_confidence is None
+        else config.disappearance_confidence
+    )
+    _require_range("watch.disappearance_confidence", disappearance, 0.0, config.confidence)
+    misses = config.consecutive_matches if config.consecutive_misses is None else config.consecutive_misses
+    _require_range("watch.consecutive_misses", misses, 1, 100)
+    _require_range("watch.interval_ms", config.interval_ms, 10, 60_000)
+    _require_range("watch.consecutive_matches", config.consecutive_matches, 1, 100)
+    _require_range("watch.cooldown_seconds", config.cooldown_seconds, 0, 86_400)
+    _require_range("storage.retention_days", config.retention_days, 0, 3_650)
+    _require_range("storage.max_capture_mb", config.max_capture_mb, 0, 1_000_000)
+    _require_range("storage.max_log_mb", config.max_log_mb, 1, 1024)
+    _require_range("storage.log_backups", config.log_backups, 1, 100)
+    if config.region is not None:
+        if config.region.left < 0 or config.region.top < 0:
+            raise ConfigError("watch.region의 left와 top은 0 이상이어야 합니다.")
+        if config.region.width <= 0 or config.region.height <= 0:
+            raise ConfigError("watch.region의 width와 height는 1 이상이어야 합니다.")
+    if require_reference and not config.reference.is_file():
+        raise ConfigError(
+            f"기준 이미지를 찾을 수 없습니다: {config.reference}\n"
+            "찾으려는 이미지를 reference.png로 저장하거나 settings.ini의 reference를 수정하세요."
+        )
+
+
+def _portable_path(path: Path, base: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(base.resolve()))
+    except ValueError:
+        return str(path.resolve())
+
+
+def save_config(config: AppConfig, path: Path | None = None) -> Path:
+    """검증한 설정을 UTF-8 INI로 원자적으로 저장한다."""
+    validate_config(config)
+    destination = (path or config.config_path).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    base = destination.parent
+    parser = configparser.ConfigParser()
+    parser["watch"] = {
+        "reference": _portable_path(config.reference, base),
+        "monitor": str(config.monitor),
+        "region": "full" if config.region is None else str(config.region),
+        "confidence": str(config.confidence),
+        "disappearance_confidence": str(
+            config.confidence
+            if config.disappearance_confidence is None
+            else config.disappearance_confidence
+        ),
+        "interval_ms": str(config.interval_ms),
+        "consecutive_matches": str(config.consecutive_matches),
+        "consecutive_misses": str(
+            config.consecutive_matches
+            if config.consecutive_misses is None
+            else config.consecutive_misses
+        ),
+        "cooldown_seconds": str(config.cooldown_seconds),
+    }
+    parser["notification"] = {
+        "sound": str(config.sound).lower(),
+        "desktop_notification": str(config.desktop_notification).lower(),
+        "save_capture": str(config.save_capture).lower(),
+    }
+    parser["storage"] = {
+        "log_directory": _portable_path(config.log_directory, base),
+        "capture_directory": _portable_path(config.capture_directory, base),
+        "retention_days": str(config.retention_days),
+        "max_capture_mb": str(config.max_capture_mb),
+        "max_log_mb": str(config.max_log_mb),
+        "log_backups": str(config.log_backups),
+    }
+    output = io.StringIO()
+    parser.write(output)
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    try:
+        temporary.write_text(output.getvalue(), encoding="utf-8")
+        temporary.replace(destination)
+    except OSError as exc:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise ConfigError(f"설정 파일을 저장할 수 없습니다: {destination} ({exc})") from exc
+    return destination
+
+
 def load_config(path: Path, *, require_reference: bool = True) -> AppConfig:
     path = path.resolve()
     parser = configparser.ConfigParser()
@@ -134,25 +228,7 @@ def load_config(path: Path, *, require_reference: bool = True) -> AppConfig:
             raise
         raise ConfigError(f"설정 값을 읽을 수 없습니다: {exc}") from exc
 
-    if monitor < 1:
-        raise ConfigError("watch.monitor 값은 1 이상이어야 합니다.")
-    _require_range("watch.confidence", confidence, 0.0, 1.0)
-    _require_range("watch.disappearance_confidence", disappearance_confidence, 0.0, confidence)
-    _require_range("watch.consecutive_misses", consecutive_misses, 1, 100)
-    _require_range("watch.interval_ms", interval_ms, 10, 60_000)
-    _require_range("watch.consecutive_matches", consecutive_matches, 1, 100)
-    _require_range("watch.cooldown_seconds", cooldown_seconds, 0, 86_400)
-    _require_range("storage.retention_days", retention_days, 0, 3_650)
-    _require_range("storage.max_capture_mb", max_capture_mb, 0, 1_000_000)
-    _require_range("storage.max_log_mb", max_log_mb, 1, 1024)
-    _require_range("storage.log_backups", log_backups, 1, 100)
-    if require_reference and not reference.is_file():
-        raise ConfigError(
-            f"기준 이미지를 찾을 수 없습니다: {reference}\n"
-            "찾으려는 이미지를 reference.png로 저장하거나 settings.ini의 reference를 수정하세요."
-        )
-
-    return AppConfig(
+    config = AppConfig(
         config_path=path,
         reference=reference,
         monitor=monitor,
@@ -173,4 +249,6 @@ def load_config(path: Path, *, require_reference: bool = True) -> AppConfig:
         max_log_mb=max_log_mb,
         log_backups=log_backups,
     )
+    validate_config(config, require_reference=require_reference)
+    return config
 

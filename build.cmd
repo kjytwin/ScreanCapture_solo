@@ -10,12 +10,17 @@ if not exist ".venv\Scripts\python.exe" goto missing_venv
 if errorlevel 1 goto missing_pyinstaller
 
 echo Building ImageWatcher.exe...
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --name ImageWatcher --distpath "." --workpath "build\pyinstaller" --specpath "build" --hidden-import winotify "src\main.py"
+".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --name ImageWatcher --distpath "." --workpath "build\pyinstaller-cli" --specpath "build" --hidden-import winotify "src\main.py"
 if errorlevel 1 goto build_failed
 if not exist "ImageWatcher.exe" goto build_failed
 
+echo Building ImageWatcherGUI.exe...
+".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --windowed --name ImageWatcherGUI --distpath "." --workpath "build\pyinstaller-gui" --specpath "build" --hidden-import winotify "src\gui.py"
+if errorlevel 1 goto build_failed
+if not exist "ImageWatcherGUI.exe" goto build_failed
+
 echo.
-echo [SUCCESS] ImageWatcher.exe was created.
+echo [SUCCESS] ImageWatcher.exe and ImageWatcherGUI.exe were created.
 pause
 exit /b 0
 

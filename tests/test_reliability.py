@@ -42,18 +42,18 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_corrupt_reference_rejected_before_capture(self):
         self.config.reference.write_bytes(b"broken png")
-        with patch("main.ScreenCapture") as capture, contextlib.redirect_stderr(io.StringIO()):
+        with patch("diagnostics.ScreenCapture") as capture, contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main.main(["--config", str(self.path), "--check-config"]), 3)
         capture.assert_not_called()
 
     def test_invalid_monitor_fails_check(self):
-        with patch("main.ScreenCapture") as capture:
+        with patch("diagnostics.ScreenCapture") as capture:
             capture.return_value.__enter__.return_value.grab.side_effect = CaptureError("invalid monitor")
             with self.assertRaises(CaptureError):
                 main.validate_environment(self.config)
 
     def test_unwritable_storage_fails_validation(self):
-        with patch("main.tempfile.TemporaryFile", side_effect=PermissionError("denied")):
+        with patch("diagnostics.tempfile.TemporaryFile", side_effect=PermissionError("denied")):
             with self.assertRaises(ConfigError):
                 main.prepare_directories(self.config)
 
