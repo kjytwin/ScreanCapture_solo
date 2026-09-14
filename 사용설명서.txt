@@ -192,9 +192,23 @@ Windows 알림이 표시되지 않습니다.
 
 9. 개발자용 빌드
 ----------------
-1) py -3 -m venv .venv
-2) .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-3) build.cmd 실행
+가장 쉬운 방법:
+1) 전체 소스 ZIP의 압축을 풉니다.
+2) 압축을 푼 프로젝트 폴더 안의 build.cmd를 더블클릭합니다.
+
+build.cmd는 자신의 폴더로 자동 이동합니다. 프로젝트 안에 .venv가 없으면 생성하고,
+필요한 개발 패키지가 없으면 requirements-dev.txt에서 자동 설치한 뒤 빌드합니다.
+
+CMD에서 수동으로 실행할 경우 먼저 프로젝트 폴더로 이동해야 합니다.
+
+  cd /d "압축을 푼 ScreanCapture_solo 폴더"
+  py -3 -m venv .venv
+  .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+  build.cmd
+
+ERROR: Could not open requirements file 오류는 현재 CMD 위치에
+requirements-dev.txt가 없다는 뜻입니다. 위 cd 명령으로 프로젝트 폴더로 이동하거나
+프로젝트 폴더 안의 build.cmd를 더블클릭하면 해결됩니다.
 
 빌드 성공 시 프로젝트 최상위 폴더에 ImageWatcher.exe와
 ImageWatcherGUI.exe가 생성됩니다. 두 실행 파일은 Git에 포함되지 않습니다.
