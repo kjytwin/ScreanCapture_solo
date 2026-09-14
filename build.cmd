@@ -24,7 +24,7 @@ if not exist "ImageWatcherGUI.exe" goto build_failed
 
 echo.
 echo [SUCCESS] ImageWatcher.exe and ImageWatcherGUI.exe were created.
-pause
+if not defined CI pause
 exit /b 0
 
 :create_venv
@@ -64,5 +64,5 @@ goto failed
 echo [ERROR] The executable build failed.
 
 :failed
-pause
+if not defined CI pause
 exit /b 1
